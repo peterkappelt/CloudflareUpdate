@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # @author Peter Kappelt
-# @version 1.0
+# @version 1.1
 
 use strict;
 use warnings;
@@ -23,9 +23,15 @@ my $cf_zoneid = 'your-zoneid';
 
 #Domains that shall be updated
 my @cf_domains = (
-					"domain1.com",
-					"sub1.domain1.com",
-					);
+	{
+		url => "sub1.domain1.com",
+		cf_cached => 0				#this page is not behind the Cloudflare-Proxy
+	},
+	{
+		url => "sub2.domain1.com",
+		cf_cached => 1				#Cloudflare-Cache is enabled for this domain
+	}
+);
 
 #Path for a cache textfile -> can be any new file that is writeable
 my $cache_file = '/var/cache/CloudflareUpdate.cache';
@@ -94,20 +100,24 @@ sub updateCloudflare($){
 		#Todo there is a better way
 		my $recordid = '';
 		foreach my $key (@{$list->{'result'}}){
-			if($key->{'name'} eq $host){
+			if($key->{'name'} eq $host->{'url'}){
 				$recordid = $key->{'id'};
 			}
 		}
 		if($recordid eq ''){
-			print(localtime() . ": " . "Unknown domain: $host\n");
+			print(localtime() . ": " . "Unknown domain: " . $host->{'url'} . "\n");
 			next;
 		}
-		my $host_response = `curl -sS -X PUT "https://api.cloudflare.com/client/v4/zones/$cf_zoneid/dns_records/$recordid" -H "X-Auth-Email: $cf_email" -H "X-Auth-Key: $cf_apikey" -H "Content-Type: application/json" --data '{"type":"A","name":"$host","content":"$ip"}'`;
+
+		my $hostname = $host->{'url'};
+		my $cf_proxied = $host->{'cf_cached'} ? 'true':'false';
+
+		my $host_response = `curl -sS -X PUT "https://api.cloudflare.com/client/v4/zones/$cf_zoneid/dns_records/$recordid" -H "X-Auth-Email: $cf_email" -H "X-Auth-Key: $cf_apikey" -H "Content-Type: application/json" --data '{"type":"A","name":"$hostname","content":"$ip","proxied":$cf_proxied}'`;
 		$host_response = JSON->new->utf8->decode($host_response);
 		if(!$host_response->{success}){
-			print(localtime() . ": " . "Error while updating host $host. Response: " . Dumper($host_response) . "\n");
+			print(localtime() . ": " . "Error while updating host $hostname. Response: " . Dumper($host_response) . "\n");
 		}else{
-			print(localtime() . ": " . "Successfully updated $host\n");
+			print(localtime() . ": " . "Successfully updated $hostname\n");
 		}
 	}
 	
